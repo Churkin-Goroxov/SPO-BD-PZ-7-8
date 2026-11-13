@@ -1,5 +1,4 @@
 from pathlib import Path
-
 import os
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
@@ -7,23 +6,23 @@ from django.core.exceptions import ImproperlyConfigured
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
 if not SECRET_KEY:
-    raise ImproperlyConfigured("Set DJANGO_SECRET_KEY")
-
-DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
+    if DEBUG:
+        SECRET_KEY = "django-insecure-local-development-only-key-change-me"
+    else:
+        raise ImproperlyConfigured("Set DJANGO_SECRET_KEY environment variable")
 
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",")
+    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
     if host.strip()
 ]
-
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
     if origin.strip()
 ]
-
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -70,7 +69,7 @@ ASGI_APPLICATION = 'config.asgi.application'
 
 DATABASES = {
     "default": dj_database_url.config(
-        default="sqlite:///db.sqlite3",
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=600,
         conn_health_checks=True,
     )
@@ -88,17 +87,15 @@ TIME_ZONE = 'Europe/Moscow'
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = 'static/'
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
     }
 }
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Настройки REST API
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -110,7 +107,14 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': None,
 }
 
-
 LOGIN_URL = 'planner:login'
 LOGIN_REDIRECT_URL = 'planner:dashboard'
 LOGOUT_REDIRECT_URL = 'planner:login'
+
+# Render terminates HTTPS before forwarding requests to Django.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    

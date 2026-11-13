@@ -5,6 +5,7 @@ from django.db.models.deletion import ProtectedError
 from django.utils.dateparse import parse_date
 from rest_framework import viewsets
 from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import IsAuthenticated
 
 from .models import Subject, Task
 from .serializers import SubjectSerializer, TaskSerializer
@@ -12,15 +13,19 @@ from .serializers import SubjectSerializer, TaskSerializer
 
 class SubjectViewSet(viewsets.ModelViewSet):
     serializer_class = SubjectSerializer
-    queryset = Subject.objects.all()
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        queryset = Subject.objects.annotate(task_count=Count('tasks')).order_by('name')
+        queryset = Subject.objects.filter(owner=self.request.user).annotate(
+            task_count=Count('tasks')
+        ).order_by('name')
         search = self.request.query_params.get('search', '').strip()
         if search:
             queryset = queryset.filter(name__icontains=search)
         return queryset
 
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
 
     def perform_destroy(self, instance):
         try:
@@ -31,10 +36,10 @@ class SubjectViewSet(viewsets.ModelViewSet):
 
 class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
-    queryset = Task.objects.select_related('subject').all()
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        queryset = Task.objects.select_related('subject').all()
+        queryset = Task.objects.filter(owner=self.request.user).select_related('subject')
         params = self.request.query_params
 
         search = params.get('search', '').strip()
@@ -44,8 +49,6 @@ class TaskViewSet(viewsets.ModelViewSet):
         due_after = params.get('due_after', '').strip()
 
         if search:
-            # SQLite LIKE does not reliably ignore case for Cyrillic text.
-            # The regex lookup uses Python's Unicode-aware case-insensitive matching.
             queryset = queryset.filter(title__iregex=re.escape(search))
         if status:
             valid_statuses = dict(Task.STATUS_CHOICES)
@@ -72,3 +75,6 @@ class TaskViewSet(viewsets.ModelViewSet):
         if ordering not in allowed_ordering:
             raise ValidationError({'ordering': 'Недопустимое поле сортировки.'})
         return queryset.order_by(ordering, 'id')
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
